@@ -3,55 +3,45 @@ from extensions import db
 from models.call import Call
 import requests
 import os
+from requests.auth import HTTPBasicAuth
+from routes.auth_routes import token_required
 
 call_bp = Blueprint('call_bp', __name__)
 
 @call_bp.route("/make-call", methods=["POST"])
-def make_call():
+@token_required
+def make_call(current_user):
     data = request.get_json()
-    to_number = data.get("number")
+    customer_number = data.get("phone_number")
 
-    if not to_number:
-        return jsonify({"error": "Phone number is required"}), 400
+    if not customer_number:
+        return jsonify({"error": "Customer number required"}), 400
+
+    agent_number = current_user.mobile_number  # 🔥 dynamic agent number
+
+    if not agent_number:
+        return jsonify({"error": "Agent mobile number is not set. Please update your profile."}), 400
 
     sid = os.getenv('EXOTEL_SID')
     api_key = os.getenv('EXOTEL_API_KEY')
     api_token = os.getenv('EXOTEL_API_TOKEN')
     caller_id = os.getenv('EXOTEL_CALLER_ID')
 
-    if not all([sid, api_key, api_token, caller_id]):
-        return jsonify({"error": "Exotel configuration missing in .env"}), 500
-
-    # Exotel API URL
-    url = f"https://{api_key}:{api_token}@api.exotel.com/v1/Accounts/{sid}/Calls/connect.json"
+    url = f"https://api.exotel.com/v1/Accounts/{sid}/Calls/connect.json"
 
     payload = {
-        "From": caller_id,
-        "To": to_number,
+        "From": agent_number,
+        "To": customer_number,
         "CallerId": caller_id
-    }    
+    }
 
-    try:
-        response = requests.post(url, data=payload)
-        response_data = response.json()
-        
-        # Save to DB
-        call_sid = response_data.get("Call", {}).get("Sid")
-        status = response_data.get("Call", {}).get("Status", "initiated")
+    response = requests.post(
+        url,
+        data=payload,
+        auth=HTTPBasicAuth(api_key, api_token)
+    )
 
-        log = Call(
-            customer_number=to_number,
-            direction="outgoing",
-            status=status,
-            call_sid=call_sid
-        )
-        db.session.add(log)
-        db.session.commit()
-
-        return jsonify(response_data)
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return jsonify(response.json())
 
 @call_bp.route("/incoming-call", methods=["POST"])
 def incoming_call():
@@ -72,7 +62,7 @@ def incoming_call():
 
     return "OK", 200
 
-@call_bp.route("/call-logs", methods=["GET"])
-def get_call_logs():
-    logs = Call.query.order_by(Call.created_at.desc()).all()
-    return jsonify([log.to_dict() for log in logs])
+@call_bp.route("/api/calls", methods=["GET"])
+def get_calls():
+    calls = Call.query.all()
+    return jsonify([call.to_dict() for call in calls])

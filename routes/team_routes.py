@@ -19,26 +19,21 @@ def get_team_overview(current_user):
     # 1. Fetch Members
     members = User.query.filter_by(organization_id=org_id, is_deleted=False).all()
     
-    # 2. Calculate Stats
-    total_members = len(members)
-    active_members = sum(1 for m in members if m.status == 'Active')
-    
-    members_data = [{
-        "id": m.id,
-        "name": m.name,
-        "role": m.role,
-        "email": m.email,
-        "status": m.status,
-        "last_active": "Today" # Placeholder, or use m.last_active if available
-    } for m in members]
+    members_list = []
+    for m in members:
+        members_list.append({
+            "id": m.id,
+            "name": m.name,
+            "email": m.email,
+            "role": m.role,
+            "status": m.status,
+            "phone": m.phone,
+            "lastActive": m.last_active.isoformat() if getattr(m, 'last_active', None) else "N/A",
+            "initials": m.name[:2].upper() if m.name else "NA",
+            "color": "#6366f1"
+        })
 
-    return jsonify({
-        "stats": {
-            "total_members": total_members,
-            "active_members": active_members
-        },
-        "teamMembers": members_data
-    }), 200
+    return jsonify(members_list), 200
 
 # --- EXISTING TEAM MANAGEMENT ROUTES ---
 

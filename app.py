@@ -12,7 +12,7 @@ from flask_cors import CORS
 from flask_socketio import SocketIO
 from flask_migrate import Migrate
 from extensions import db, jwt, mail
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy import text
 from routes import auth_bp, social_bp, website_bp, dashboard_bp, plan_bp, quick_actions_bp, contact_bp, lead_bp, deal_bp, note_file_bp, calendar_bp, activity_bp, inbox_bp, webhook_bp, channel_bp, message_bp, conversation_bp
 from routes.campaign_routes import campaign_bp
@@ -119,7 +119,7 @@ app.register_blueprint(plan_bp, url_prefix="/api")
 app.register_blueprint(chart_bp, url_prefix="/api")
 app.register_blueprint(quick_actions_bp, url_prefix="/api")
 app.register_blueprint(contact_bp)
-app.register_blueprint(lead_bp)
+app.register_blueprint(lead_bp, url_prefix="/api/leads")
 app.register_blueprint(deal_bp)
 app.register_blueprint(import_export_bp, url_prefix="/api")
 app.register_blueprint(note_file_bp)
@@ -173,6 +173,24 @@ with app.app_context():
     # db.drop_all() # Uncomment this ONLY if you need to reset the DB completely
     # db.create_all() # Removed in favor of Flask-Migrate
     
+    # --- Database Connection Check ---
+    try:
+        with db.engine.connect() as connection:
+            print("[OK] Database connection successful.")
+    except OperationalError as e:
+        print("\n" + "!"*60)
+        print("❌ DATABASE CONNECTION FAILED")
+        print("!"*60)
+        if "1045" in str(e):
+            print("Error 1045: Access Denied. Invalid username or password.")
+            print("The application is trying to connect with NO password (or an incorrect one).")
+            print(f"Current URI: {app.config['SQLALCHEMY_DATABASE_URI']}")
+            print("\n👉 FIX: Run 'python setup_env.py' to set your password.")
+        else:
+            print(f"Error: {e}")
+        print("!"*60 + "\n")
+        sys.exit(1)
+
     # --- Auto-Migration for Users Table (Fix for missing columns) ---
     try:
         with db.engine.connect() as connection:
@@ -188,6 +206,18 @@ with app.app_context():
                     connection.commit()
                 except Exception:
                     pass # Column might already exist
+
+            # Check if mobile_number column exists
+            try:
+                connection.execute(text("SELECT mobile_number FROM users LIMIT 1"))
+            except Exception:
+                print("[WARN] Column 'mobile_number' not found. Applying migration...")
+                try:
+                    connection.execute(text("ALTER TABLE users ADD COLUMN mobile_number VARCHAR(15)"))
+                    print("[OK] Added column: mobile_number")
+                    connection.commit()
+                except Exception as e:
+                    print(f"[FAIL] Error adding mobile_number: {e}")
 
             # Check if provider column exists (Social Auth)
             try:
@@ -783,6 +813,18 @@ with app.app_context():
                 try:
                     connection.execute(text("ALTER TABLE campaigns ADD COLUMN scheduled_at DATETIME"))
                     print("[OK] Added scheduled_at to campaigns.")
+                    connection.commit()
+                except Exception as e:
+                    print(f"[FAIL] Error updating campaigns table: {e}")
+
+            # 1.2 Add revenue to campaigns (Marketing Dashboard)
+            try:
+                connection.execute(text("SELECT revenue FROM campaigns LIMIT 1"))
+            except Exception:
+                print("[WARN] Column 'revenue' missing in campaigns. Adding...")
+                try:
+                    connection.execute(text("ALTER TABLE campaigns ADD COLUMN revenue FLOAT DEFAULT 0"))
+                    print("[OK] Added revenue to campaigns.")
                     connection.commit()
                 except Exception as e:
                     print(f"[FAIL] Error updating campaigns table: {e}")

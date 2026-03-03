@@ -18,11 +18,13 @@ def serialize_campaign(c):
         "config": c.config,
         "whatsappConfig": c.whatsapp_config,
         "branch": c.branch,
+        "budget": c.budget,
+        "revenue": getattr(c, 'revenue', 0.0),
         "createdAt": c.created_at.isoformat() if c.created_at else None,
         "updatedAt": c.updated_at.isoformat() if c.updated_at else None
     }
 
-@campaign_bp.route('', methods=['GET'])
+@campaign_bp.route('/', methods=['GET'], strict_slashes=False)
 @token_required
 def get_campaigns(current_user):
     query = Campaign.query.filter_by(organization_id=current_user.organization_id)
@@ -47,27 +49,33 @@ def get_campaigns(current_user):
     campaigns = query.order_by(Campaign.created_at.desc()).all()
     return jsonify([serialize_campaign(c) for c in campaigns]), 200
 
-@campaign_bp.route('', methods=['POST'])
+@campaign_bp.route('/', methods=['POST'], strict_slashes=False)
 @token_required
 def create_campaign(current_user):
-    data = request.get_json()
-    
-    new_campaign = Campaign(
-        name=data["name"],
-        channel=data["channel"],
-        status=data.get("status", "Draft"),
-        month=data.get("month"),
-        year=data.get("year"),
-        branch=data.get("branch"),
-        whatsapp_config=data.get("whatsappConfig"),
-        organization_id=current_user.organization_id,
-        created_by=current_user.id
-    )
+    try:
+        data = request.get_json()
+        
+        new_campaign = Campaign(
+            name=data["name"],
+            channel=data["channel"],
+            status=data.get("status", "Draft"),
+            month=data.get("month"),
+            year=data.get("year"),
+            branch=data.get("branch"),
+            whatsapp_config=data.get("whatsappConfig"),
+            budget=float(data.get("budget", 0)),
+            revenue=float(data.get("revenue", 0)),
+            organization_id=current_user.organization_id,
+            created_by=current_user.id
+        )
 
-    db.session.add(new_campaign)
-    db.session.commit()
+        db.session.add(new_campaign)
+        db.session.commit()
 
-    return jsonify(serialize_campaign(new_campaign)), 201
+        return jsonify(serialize_campaign(new_campaign)), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 @campaign_bp.route('/<string:campaign_id>/status', methods=['PATCH'])
 @token_required

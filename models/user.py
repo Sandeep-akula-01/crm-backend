@@ -9,6 +9,7 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password = db.Column(db.String(200))
     phone = db.Column(db.String(20))
+    mobile_number = db.Column(db.String(15), nullable=True)
     department = db.Column(db.String(100))
     designation = db.Column(db.String(100))
     # Per user request, roles are 'admin', 'agent'

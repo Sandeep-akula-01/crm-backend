@@ -15,8 +15,9 @@ class Lead(db.Model):
     source = db.Column(db.String(50)) # website / orbit / whatsapp
     score = db.Column(db.String(20))
     sla = db.Column(db.String(20))
+    owner = db.Column(db.String(100), nullable=True)
     campaign_id = db.Column(db.String(36), db.ForeignKey('campaigns.id'), nullable=True)
-    # description = db.Column(db.Text) # Temporarily disabled
+    description = db.Column(db.Text) # Temporarily disabled
     assigned_team_id = db.Column(db.Integer, db.ForeignKey('teams.id'), nullable=True)
     assigned_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     organization_id = db.Column(db.Integer, db.ForeignKey('organizations.id'), nullable=True)
@@ -27,6 +28,16 @@ class Lead(db.Model):
 
     assigned_team = db.relationship('Team')
     assigned_user = db.relationship('User')
+
+    def to_dict(self):
+        d = {}
+        for c in self.__table__.columns:
+            val = getattr(self, c.name)
+            if isinstance(val, datetime):
+                d[c.name] = val.isoformat()
+            else:
+                d[c.name] = val
+        return d
 
 # Keeping other models to avoid breaking imports
 class Deal(db.Model):

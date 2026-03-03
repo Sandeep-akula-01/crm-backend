@@ -3,6 +3,7 @@ from routes.auth_routes import token_required, send_email
 from models.user import User, LoginHistory
 from models.organization import Organization
 from models.crm import Lead, Deal, Activity
+from models.campaign import Campaign
 from models.task import Task
 from extensions import db
 from sqlalchemy import func, case, text
@@ -314,6 +315,7 @@ def create_employee(current_user):
         email=email,
         password=generate_password_hash(raw_password),
         phone=data.get("phone"),
+        mobile_number=data.get("mobile_number"),
         department=data.get("department"),
         designation=data.get("designation"),
         role=role,
@@ -393,6 +395,7 @@ def get_employees(current_user):
         "name": u.name,
         "email": u.email,
         "phone": u.phone,
+        "mobile_number": getattr(u, "mobile_number", None),
         "department": u.department,
         "designation": u.designation,
         "role": u.role,
@@ -429,6 +432,7 @@ def update_employee(current_user, user_id):
     # Fields anyone can update for themselves (or admins can update)
     if "name" in data: user.name = data["name"]
     if "phone" in data: user.phone = data["phone"]
+    if "mobile_number" in data: user.mobile_number = data["mobile_number"]
     
     # Fields only Admins/HR/Super Admin can update
     if is_admin_hr or is_super:
@@ -907,3 +911,72 @@ def get_revenue_chart(current_user):
     response = [{"month": months[i-1], "revenue": revenue_dict.get(i, 0)} for i in range(1, 13)]
 
     return jsonify(response)
+
+@dashboard_bp.route("/dashboard/marketing", methods=["GET"])
+@token_required
+def get_marketing_dashboard(current_user):
+    try:
+        org_id = current_user.organization_id
+        
+        # 1. KPIs
+        total_campaigns = Campaign.query.filter_by(organization_id=org_id).count()
+        total_leads = Lead.query.filter_by(organization_id=org_id, is_deleted=False).count()
+        
+        # Conversion Rate
+        converted_leads = Lead.query.filter_by(organization_id=org_id, status='Converted', is_deleted=False).count()
+        conversion_rate = 0
+        if total_leads > 0:
+            conversion_rate = round((converted_leads / total_leads) * 100, 1)
+            
+        # Revenue (Using Deal revenue as it represents actual sales)
+        revenue = db.session.query(func.sum(Deal.value)).filter(
+            Deal.organization_id == org_id,
+            Deal.stage.ilike('%won%'),
+            Deal.is_deleted == False
+        ).scalar() or 0
+        
+        # 2. Campaigns List
+        campaigns_list = Campaign.query.filter_by(organization_id=org_id).order_by(Campaign.created_at.desc()).limit(10).all()
+        campaigns_data = []
+        for c in campaigns_list:
+            # Use revenue if available, else 0
+            camp_rev = getattr(c, 'revenue', 0) or 0
+            campaigns_data.append({
+                "name": c.name,
+                "channel": c.channel,
+                "status": c.status,
+                "leads": 0, # Placeholder for now
+                "conversion": "0%",
+                "revenue": f"₹{camp_rev}",
+                "date": c.created_at.strftime("%b %d, %Y") if c.created_at else ""
+            })
+
+        response = {
+            "kpis": {
+                "totalCampaigns": {"value": total_campaigns, "growth": "+0%"},
+                "leadsGenerated": {"value": total_leads, "growth": "+0%"},
+                "conversionRate": {"value": f"{conversion_rate}%", "growth": "+0%"},
+                "totalRevenue": {"value": f"₹{int(revenue)}", "growth": "+0%"}
+            },
+            "trendData": [], # Empty array as requested if no data logic ready
+            "funnelData": [],
+            "channels": [],
+            "campaigns": campaigns_data
+        }
+        
+        return jsonify(response)
+
+    except Exception as e:
+        print(f"[FAIL] Marketing Dashboard Error: {e}")
+        return jsonify({
+            "kpis": {
+                "totalCampaigns": {"value": 0, "growth": "+0%"},
+                "leadsGenerated": {"value": 0, "growth": "+0%"},
+                "conversionRate": {"value": "0%", "growth": "+0%"},
+                "totalRevenue": {"value": "₹0", "growth": "+0%"}
+            },
+            "trendData": [],
+            "funnelData": [],
+            "channels": [],
+            "campaigns": []
+        })

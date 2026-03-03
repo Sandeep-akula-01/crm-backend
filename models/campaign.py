@@ -20,6 +20,7 @@ class Campaign(db.Model):
     end_date = db.Column(db.DateTime, nullable=True)
     budget = db.Column(db.Float, default=0.0)
     spent = db.Column(db.Float, default=0.0)
+    revenue = db.Column(db.Float, default=0.0)
     scheduled_at = db.Column(db.DateTime, nullable=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     organization_id = db.Column(db.Integer, db.ForeignKey('organizations.id'))
